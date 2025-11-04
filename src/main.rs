@@ -1,7 +1,7 @@
 use clap::Parser;
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_sdk::bs58;
-use solana_sdk::signature::Signer;
+use solana_sdk::signature::{Keypair, Signer, read_keypair_file};
 use solana_transaction::Transaction;
 use std::io::{self, Write};
 
@@ -13,9 +13,9 @@ struct Args {
     #[arg(long)]
     message: String,
 
-    /// Path to the keypair file (required)
+    /// Path(s) to keypair file(s). Repeat --keyfile for each signer (required)
     #[arg(long)]
-    keyfile: String,
+    keyfile: Vec<String>,
 
     #[arg(long, default_value = "https://api.mainnet-beta.solana.com")]
     rpc_url: String,
@@ -61,17 +61,22 @@ fn main() {
         return;
     }
 
-    // Load keypair.
-    let keypair = solana_sdk::signature::read_keypair_file(args.keyfile)
-        .expect("Failed reading keypair file");
-    let signer_pubkey = keypair.pubkey();
-    println!("Loaded keypair for {signer_pubkey}");
+    // Load keypairs.
+    let keypairs: Vec<Keypair> = args
+        .keyfile
+        .iter()
+        .map(|p| read_keypair_file(p).expect("Failed reading keypair file"))
+        .collect();
+    for kp in &keypairs {
+        println!("Loaded keypair for {}", kp.pubkey());
+    }
 
     // Sign and send the transaction.
     let client = RpcClient::new(args.rpc_url);
     let blockhash = client.get_latest_blockhash().unwrap();
     let mut tx = Transaction::new_unsigned(msg);
-    tx.sign(&[keypair], blockhash);
+    let signers: Vec<&Keypair> = keypairs.iter().collect();
+    tx.sign(&signers, blockhash);
     let signature = client
         .send_and_confirm_transaction_with_spinner(&tx)
         .expect("Failed to send transaction");
